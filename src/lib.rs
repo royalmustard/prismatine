@@ -10,17 +10,17 @@ use std::sync::Arc;
 // The size of the windows we'll process at a time.
 const WINDOW_SIZE: usize = 512;
 /// The length of the filter's impulse response.
-const FILTER_WINDOW_SIZE: usize = 33;
+const FILTER_WINDOW_SIZE: usize = 0;
 /// The length of the FFT window we will use to perform FFT convolution. This includes padding to
 /// prevent time domain aliasing as a result of cyclic convolution.
-const FFT_WINDOW_SIZE: usize = WINDOW_SIZE + FILTER_WINDOW_SIZE - 1;
+const FFT_WINDOW_SIZE: usize = WINDOW_SIZE; //+ FILTER_WINDOW_SIZE - 1;
 
 /// The gain compensation we need to apply for the STFT process.
 const GAIN_COMPENSATION: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
 
 fn kinetic_spectrum_from_window_size(window_size: usize, sample_rate: f32) -> Vec<Complex<f32>>
 {
-    let filter_spectrum: Vec<Complex32> = (0..window_size/2).map(|i| ((i as f32))* sample_rate/(window_size as f32) ) //construced frequency values
+    let filter_spectrum: Vec<Complex32> = (0..window_size/2+1).map(|i| (i as f32)* sample_rate/(2.0 *window_size as f32) ) //construced frequency values
     .map(|f| {if f != 0.0 {Complex32{re:0.0, im:1.0/f}}
                     else {Complex32::new(0.0, 0.0)}})
     .collect();
@@ -43,7 +43,8 @@ struct Prismatine {
         /// The output of our real->complex FFT.
         complex_fft_buffer: Vec<Complex32>,
 
-        scratch_buffer: [Complex32; 1024]
+        scratch_buffer: [Complex32; 2048],
+        window_buff: [f32; FFT_WINDOW_SIZE]
 }
 
 #[derive(Params)]
@@ -57,21 +58,22 @@ impl Default for Prismatine {
         let r2c_plan = planner.plan_fft_forward(FFT_WINDOW_SIZE);
         let c2r_plan = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
         let complex_fft_buffer = r2c_plan.make_output_vec();
-
+        nih_dbg!(complex_fft_buffer.len());
         
         
         
 
         Self {
             params: Arc::new(PrismatineParams::default()),
-            stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE-WINDOW_SIZE),
+            stft: util::StftHelper::new(2, WINDOW_SIZE, 0),
 
             filter_spectrum: vec![Complex32{re: 0.0, im: 0.0}; complex_fft_buffer.len()],
 
             r2c_plan,
             c2r_plan,
             complex_fft_buffer,
-            scratch_buffer: [Complex32::new(0.0, 0.0); 1024]
+            scratch_buffer: [Complex32::new(0.0, 0.0); 2048],
+            window_buff: [0.0; FFT_WINDOW_SIZE]
         }
     }
 }
@@ -136,13 +138,14 @@ impl Plugin for Prismatine {
         // function if you do not need it.
         context.set_latency_samples(self.stft.latency_samples() + (FILTER_WINDOW_SIZE as u32 / 2));
         self.filter_spectrum = kinetic_spectrum_from_window_size(WINDOW_SIZE, buffer_config.sample_rate);
+        //nih_dbg!(&self.filter_spectrum);
+        util::window::hann_in_place(&mut self.window_buff);
         nih_dbg!(self.filter_spectrum.iter().map(|c| c.abs()).sum::<f32>());
+        nih_dbg!(self.scratch_buffer);
         true
     }
 
     fn reset(&mut self) {
-        // Reset buffers and envelopes here. This can be called from the audio thread and may not
-        // allocate. You can remove this function if you do not need it.
         self.stft.set_block_size(WINDOW_SIZE);
     }
 
@@ -155,28 +158,33 @@ impl Plugin for Prismatine {
         
         self.stft
             .process_overlap_add(buffer, 1, |_channel_idx, real_fft_buffer| {
+                nih_log!("No alloc pls 1");
                 // Forward FFT, `real_fft_buffer` already is already padded with zeroes, and the
                 // padding from the last iteration will have already been added back to the start of
                 // the buffer
+                //util::window::multiply_with_window(real_fft_buffer, &self.window_buff);
                 self.r2c_plan
                     .process_with_scratch(real_fft_buffer, &mut self.complex_fft_buffer, &mut self.scratch_buffer)
                     .unwrap();
-
+                nih_log!("No alloc pls 2");
                 // As per the convolution theorem we can simply multiply these two buffers. We'll
                 // also apply the gain compensation at this point.
+                nih_dbg!(self.filter_spectrum.len());
+                nih_dbg!(self.complex_fft_buffer.len());
                 for (fft_bin, kernel_bin) in self
                     .complex_fft_buffer
                     .iter_mut()
                     .zip(&self.filter_spectrum)
                 {
-                    *fft_bin *= *kernel_bin * GAIN_COMPENSATION;
+                    *fft_bin *= kernel_bin* GAIN_COMPENSATION;
                 }
-
+                nih_log!("No alloc pls 3");
                 // Inverse FFT back into the scratch buffer. This will be added to a ring buffer
                 // which gets written back to the host at a one block delay.
                 self.c2r_plan
                     .process_with_scratch(&mut self.complex_fft_buffer, real_fft_buffer, &mut self.scratch_buffer)
                     .unwrap();
+                nih_log!("No alloc pls 4");
             });
         
 
