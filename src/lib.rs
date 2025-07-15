@@ -56,7 +56,11 @@ struct Prismatine {
 
 #[derive(Params)]
 struct PrismatineParams {
+
+    #[id = "phase_gain"]
     phase_gain: FloatParam,
+
+    #[id = "I_c"]
     I_c: FloatParam
 }
 
@@ -95,9 +99,9 @@ impl Default for PrismatineParams {
                 "Phase Gain",
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                    min: util::db_to_gain(0.0),
+                    max: util::db_to_gain(60.0),
+                    factor: FloatRange::gain_skew_factor(0.0, 60.0),
                 },
             )
             .with_smoother(SmoothingStyle::Logarithmic(50.0))
@@ -239,9 +243,11 @@ impl Plugin for Prismatine {
                     self.phase[i] += dphi;
                 }
 
-                *sample = self.params.I_c.smoothed.next() * self.phase[i];
+                *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
 
             }
+            //TODO: Reset phase when input stops to prevent outputting constant signal
+            //reset phase buttons in GUI
         }
 
         ProcessStatus::Normal
@@ -249,7 +255,7 @@ impl Plugin for Prismatine {
 }
 
 impl ClapPlugin for Prismatine {
-    const CLAP_ID: &'static str = "de.memium.prismatine";
+    const CLAP_ID: &'static str = "de.royalmustard.prismatine";
     const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
