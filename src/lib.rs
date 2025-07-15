@@ -1,6 +1,7 @@
 use fft_filter::FFTHelper;
 use nih_plug::prelude::*;
-use realfft::{num_complex::{Complex, Complex32, ComplexFloat}, num_traits::Inv, ComplexToReal, RealFftPlanner, RealToComplex};
+use realfft::{num_complex::{Complex, Complex32, ComplexFloat}, num_traits::{Float, Inv}, ComplexToReal, RealFftPlanner, RealToComplex};
+use core::f32;
 use std::sync::Arc;
 
 mod fft_filter;
@@ -20,6 +21,7 @@ const FFT_WINDOW_SIZE: usize = WINDOW_SIZE; //+ FILTER_WINDOW_SIZE - 1;
 /// The gain compensation we need to apply for the STFT process.
 const GAIN_COMPENSATION: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
 
+const MAX_PHASE: f32 = 1.0e5 * f32::consts::PI;
 fn kinetic_spectrum_from_window_size(window_size: usize, sample_rate: f32) -> Vec<Complex<f32>>
 {
     let filter_spectrum: Vec<Complex32> = (0..window_size/2).map(|i| (i as f32)* sample_rate/(2.0 *window_size as f32) ) //construced frequency values
@@ -46,12 +48,16 @@ struct Prismatine {
         complex_fft_buffer: Vec<Complex32>,
 
         scratch_buffer: [Complex32; 2048],
-        window_buff: [f32; FFT_WINDOW_SIZE]
+        window_buff: [f32; FFT_WINDOW_SIZE],
+
+        prev: [f32;2],
+        phase: [f32;2]
 }
 
 #[derive(Params)]
 struct PrismatineParams {
-
+    phase_gain: FloatParam,
+    I_c: FloatParam
 }
 
 impl Default for Prismatine {
@@ -75,7 +81,9 @@ impl Default for Prismatine {
             c2r_plan,
             complex_fft_buffer,
             scratch_buffer: [Complex32::new(0.0, 0.0); 2048],
-            window_buff: [0.0; FFT_WINDOW_SIZE]
+            window_buff: [0.0; FFT_WINDOW_SIZE],
+            prev: [0.0;2],
+            phase: [0.0;2]
         }
     }
 }
@@ -83,6 +91,32 @@ impl Default for Prismatine {
 impl Default for PrismatineParams {
     fn default() -> Self {
         Self {
+            phase_gain: FloatParam::new(
+                "Phase Gain",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            I_c: FloatParam::new(
+                "Critical Current",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
 }
@@ -131,7 +165,7 @@ impl Plugin for Prismatine {
 
     fn initialize(
         &mut self,
-        _audio_io_layout: &AudioIOLayout,
+        audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
@@ -144,6 +178,7 @@ impl Plugin for Prismatine {
         util::window::hann_in_place(&mut self.window_buff);
         nih_dbg!(self.filter_spectrum.iter().map(|c| c.abs()).sum::<f32>());
         //nih_dbg!(self.scratch_buffer);
+        //self.prev = vec![0.0, 0.0]; //Two input channels, as specified in the layout, idk if this needs to by dynamic
         true
     }
 
@@ -158,35 +193,56 @@ impl Plugin for Prismatine {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        nih_dbg!(buffer.samples());
-        self.stft
-            .process(buffer, |_channel_idx, real_fft_buffer| {
+        // nih_dbg!(buffer.samples());
+        // self.stft
+        //     .process(buffer, |_channel_idx, real_fft_buffer| {
                 
                 
 
-                //util::window::multiply_with_window(real_fft_buffer, &self.window_buff);
-                self.r2c_plan
-                    .process_with_scratch(real_fft_buffer, &mut self.complex_fft_buffer, &mut self.scratch_buffer)
-                    .unwrap();
+        //         //util::window::multiply_with_window(real_fft_buffer, &self.window_buff);
+        //         self.r2c_plan
+        //             .process_with_scratch(real_fft_buffer, &mut self.complex_fft_buffer, &mut self.scratch_buffer)
+        //             .unwrap();
                 
-                nih_dbg!(self.filter_spectrum.len());
-                nih_dbg!(self.complex_fft_buffer.len());
-                for (fft_bin, kernel_bin) in self
-                    .complex_fft_buffer
-                    .iter_mut()
-                    .zip(&self.filter_spectrum)
+        //         nih_dbg!(self.filter_spectrum.len());
+        //         nih_dbg!(self.complex_fft_buffer.len());
+        //         for (fft_bin, kernel_bin) in self
+        //             .complex_fft_buffer
+        //             .iter_mut()
+        //             .zip(&self.filter_spectrum)
+        //         {
+        //             *fft_bin *=  GAIN_COMPENSATION* kernel_bin;
+        //         }
+                
+        //         // Inverse FFT back into the scratch buffer. This will be added to a ring buffer
+        //         // which gets written back to the host at a one block delay.
+        //         self.c2r_plan
+        //             .process_with_scratch(&mut self.complex_fft_buffer, real_fft_buffer, &mut self.scratch_buffer)
+        //             .unwrap();
+                
+        //     });
+        for channel_samples in buffer.iter_samples()
+        {
+            for (i, sample) in channel_samples.into_iter().enumerate()
+            {
+                let dphi = (self.prev[i] - *sample) * self.params.phase_gain.smoothed.next();
+                self.prev[i] = *sample;
+                //limit maximum phase for numerical precision
+                if self.phase[i] + dphi > MAX_PHASE
                 {
-                    *fft_bin *=  GAIN_COMPENSATION* kernel_bin;
+                    self.phase[i] += -MAX_PHASE +dphi;
                 }
-                
-                // Inverse FFT back into the scratch buffer. This will be added to a ring buffer
-                // which gets written back to the host at a one block delay.
-                self.c2r_plan
-                    .process_with_scratch(&mut self.complex_fft_buffer, real_fft_buffer, &mut self.scratch_buffer)
-                    .unwrap();
-                
-            });
-        
+                else if self.phase[i] + dphi < -MAX_PHASE {
+                    self.phase[i] += MAX_PHASE + dphi;
+                }
+                else {
+                    self.phase[i] += dphi;
+                }
+
+                *sample = self.params.I_c.smoothed.next() * self.phase[i];
+
+            }
+        }
 
         ProcessStatus::Normal
     }

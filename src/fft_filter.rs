@@ -1,4 +1,4 @@
-use dasp_ring_buffer::Fixed;
+
 use nih_plug::buffer::{Buffer, SamplesIter};
 
 pub struct FFTHelper
