@@ -1,7 +1,11 @@
+use core::f32;
 use fft_filter::FFTHelper;
 use nih_plug::prelude::*;
-use realfft::{num_complex::{Complex, Complex32, ComplexFloat}, num_traits::{Float, Inv}, ComplexToReal, RealFftPlanner, RealToComplex};
-use core::f32;
+use realfft::{
+    num_complex::{Complex, Complex32, ComplexFloat},
+    num_traits::{Float, Inv},
+    ComplexToReal, RealFftPlanner, RealToComplex,
+};
 use std::sync::Arc;
 
 mod fft_filter;
@@ -22,46 +26,59 @@ const FFT_WINDOW_SIZE: usize = WINDOW_SIZE; //+ FILTER_WINDOW_SIZE - 1;
 const GAIN_COMPENSATION: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
 
 const MAX_PHASE: f32 = 1.0e5 * f32::consts::PI;
-fn kinetic_spectrum_from_window_size(window_size: usize, sample_rate: f32) -> Vec<Complex<f32>>
-{
-    let filter_spectrum: Vec<Complex32> = (0..window_size/2).map(|i| (i as f32)* sample_rate/(2.0 *window_size as f32) ) //construced frequency values
-    .map(|f| {if f != 0.0 {Complex32{re:1.0/f, im:1.0/f}}
-                    else {Complex32::new(0.0, 0.0)}})
-    .collect();
+fn kinetic_spectrum_from_window_size(window_size: usize, sample_rate: f32) -> Vec<Complex<f32>> {
+    let filter_spectrum: Vec<Complex32> = (0..window_size / 2)
+        .map(|i| (i as f32) * sample_rate / (2.0 * window_size as f32)) //construced frequency values
+        .map(|f| {
+            if f != 0.0 {
+                Complex32 {
+                    re: 1.0 / f,
+                    im: 1.0 / f,
+                }
+            } else {
+                Complex32::new(0.0, 0.0)
+            }
+        })
+        .collect();
     let gain_compensation: f32 = filter_spectrum.iter().map(|c| c.abs()).sum::<f32>().inv();
-    filter_spectrum.iter().map(|c| c*gain_compensation).collect()
+    filter_spectrum
+        .iter()
+        .map(|c| c * gain_compensation)
+        .collect()
 }
 struct Prismatine {
     params: Arc<PrismatineParams>,
 
-        /// An adapter that performs most of the overlap-add algorithm for us.
-        stft: FFTHelper,
+    /// An adapter that performs most of the overlap-add algorithm for us.
+    stft: FFTHelper,
 
-        /// The FFT of a simple low-pass FIR filter.
-        filter_spectrum: Vec<Complex32>,
-    
-        /// The algorithm for the FFT operation.
-        r2c_plan: Arc<dyn RealToComplex<f32>>,
-        /// The algorithm for the IFFT operation.
-        c2r_plan: Arc<dyn ComplexToReal<f32>>,
-        /// The output of our real->complex FFT.
-        complex_fft_buffer: Vec<Complex32>,
+    /// The FFT of a simple low-pass FIR filter.
+    filter_spectrum: Vec<Complex32>,
 
-        scratch_buffer: [Complex32; 2048],
-        window_buff: [f32; FFT_WINDOW_SIZE],
+    /// The algorithm for the FFT operation.
+    r2c_plan: Arc<dyn RealToComplex<f32>>,
+    /// The algorithm for the IFFT operation.
+    c2r_plan: Arc<dyn ComplexToReal<f32>>,
+    /// The output of our real->complex FFT.
+    complex_fft_buffer: Vec<Complex32>,
 
-        prev: [f32;2],
-        phase: [f32;2]
+    scratch_buffer: [Complex32; 2048],
+    window_buff: [f32; FFT_WINDOW_SIZE],
+
+    prev: [f32; 2],
+    phase: [f32; 2],
 }
 
 #[derive(Params)]
 struct PrismatineParams {
-
+    //TODO: Dry/Wet
     #[id = "phase_gain"]
     phase_gain: FloatParam,
 
     #[id = "I_c"]
-    I_c: FloatParam
+    I_c: FloatParam,
+
+    
 }
 
 impl Default for Prismatine {
@@ -71,23 +88,20 @@ impl Default for Prismatine {
         let c2r_plan = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
         let complex_fft_buffer = r2c_plan.make_output_vec();
         nih_dbg!(complex_fft_buffer.len());
-        
-        
-        
 
         Self {
             params: Arc::new(PrismatineParams::default()),
             stft: FFTHelper::new(2, WINDOW_SIZE),
 
-            filter_spectrum: vec![Complex32{re: 0.0, im: 0.0}; complex_fft_buffer.len()],
+            filter_spectrum: vec![Complex32 { re: 0.0, im: 0.0 }; complex_fft_buffer.len()],
 
             r2c_plan,
             c2r_plan,
             complex_fft_buffer,
             scratch_buffer: [Complex32::new(0.0, 0.0); 2048],
             window_buff: [0.0; FFT_WINDOW_SIZE],
-            prev: [0.0;2],
-            phase: [0.0;2]
+            prev: [0.0; 2],
+            phase: [0.0; 2],
         }
     }
 }
@@ -148,7 +162,6 @@ impl Plugin for Prismatine {
         names: PortNames::const_default(),
     }];
 
-
     const MIDI_INPUT: MidiConfig = MidiConfig::None;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
 
@@ -177,7 +190,8 @@ impl Plugin for Prismatine {
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
         context.set_latency_samples(WINDOW_SIZE as u32);
-        self.filter_spectrum = kinetic_spectrum_from_window_size(WINDOW_SIZE, buffer_config.sample_rate);
+        self.filter_spectrum =
+            kinetic_spectrum_from_window_size(WINDOW_SIZE, buffer_config.sample_rate);
         //nih_dbg!(&self.filter_spectrum);
         util::window::hann_in_place(&mut self.window_buff);
         nih_dbg!(self.filter_spectrum.iter().map(|c| c.abs()).sum::<f32>());
@@ -189,6 +203,8 @@ impl Plugin for Prismatine {
     fn reset(&mut self) {
         //self.stft.set_block_size(WINDOW_SIZE);
         self.stft.reset();
+        self.phase = [0.0;2];
+        self.prev = [0.0;2];
     }
 
     fn process(
@@ -200,14 +216,12 @@ impl Plugin for Prismatine {
         // nih_dbg!(buffer.samples());
         // self.stft
         //     .process(buffer, |_channel_idx, real_fft_buffer| {
-                
-                
 
         //         //util::window::multiply_with_window(real_fft_buffer, &self.window_buff);
         //         self.r2c_plan
         //             .process_with_scratch(real_fft_buffer, &mut self.complex_fft_buffer, &mut self.scratch_buffer)
         //             .unwrap();
-                
+
         //         nih_dbg!(self.filter_spectrum.len());
         //         nih_dbg!(self.complex_fft_buffer.len());
         //         for (fft_bin, kernel_bin) in self
@@ -217,38 +231,55 @@ impl Plugin for Prismatine {
         //         {
         //             *fft_bin *=  GAIN_COMPENSATION* kernel_bin;
         //         }
-                
+
         //         // Inverse FFT back into the scratch buffer. This will be added to a ring buffer
         //         // which gets written back to the host at a one block delay.
         //         self.c2r_plan
         //             .process_with_scratch(&mut self.complex_fft_buffer, real_fft_buffer, &mut self.scratch_buffer)
         //             .unwrap();
-                
+
         //     });
-        for channel_samples in buffer.iter_samples()
-        {
-            for (i, sample) in channel_samples.into_iter().enumerate()
-            {
+
+        //TODO: Play with simd
+        for channel_samples in buffer.iter_samples() {
+            for (i, sample) in channel_samples.into_iter().enumerate() {
                 let dphi = (self.prev[i] - *sample) * self.params.phase_gain.smoothed.next();
                 self.prev[i] = *sample;
                 //limit maximum phase for numerical precision
-                if self.phase[i] + dphi > MAX_PHASE
-                {
-                    self.phase[i] += -MAX_PHASE +dphi;
-                }
-                else if self.phase[i] + dphi < -MAX_PHASE {
+                if self.phase[i] + dphi > MAX_PHASE {
+                    self.phase[i] += -MAX_PHASE + dphi;
+                } else if self.phase[i] + dphi < -MAX_PHASE {
                     self.phase[i] += MAX_PHASE + dphi;
-                }
-                else {
+                } else {
                     self.phase[i] += dphi;
                 }
 
                 *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
-
             }
             //TODO: Reset phase when input stops to prevent outputting constant signal
             //reset phase buttons in GUI
+            
         }
+        // FFT yeet DC component? Works but TODO: add a toggle
+        self.stft.process(buffer, |_channel_idx, real_fft_buffer| {
+            self.r2c_plan
+                .process_with_scratch(
+                    real_fft_buffer,
+                    &mut self.complex_fft_buffer,
+                    &mut self.scratch_buffer,
+                )
+                .unwrap();
+
+            self.complex_fft_buffer[0] = 0.0.into();
+            self.complex_fft_buffer.iter_mut().for_each(|c| *c *= GAIN_COMPENSATION);
+            self.c2r_plan
+                .process_with_scratch(
+                    &mut self.complex_fft_buffer,
+                    real_fft_buffer,
+                    &mut self.scratch_buffer,
+                )
+                .unwrap();
+        });
 
         ProcessStatus::Normal
     }
@@ -264,7 +295,4 @@ impl ClapPlugin for Prismatine {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
 }
 
-
-
 nih_export_clap!(Prismatine);
-
