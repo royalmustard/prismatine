@@ -1,13 +1,15 @@
 use core::f32;
 use fft_filter::FFTHelper;
 use nih_plug::prelude::*;
+
 use realfft::{
     num_complex::{Complex, Complex32, ComplexFloat},
-    num_traits::{Float, Inv},
+    num_traits::{Inv},
     ComplexToReal, RealFftPlanner, RealToComplex,
 };
 use std::sync::Arc;
 
+mod editor;
 mod fft_filter;
 // FT stuff:
 // Sample rate ~ maximum frequency
@@ -78,7 +80,10 @@ struct PrismatineParams {
     #[id = "I_c"]
     I_c: FloatParam,
 
-    
+    #[id = "invert_phase"]
+    invert_phase: BoolParam,
+
+
 }
 
 impl Default for Prismatine {
@@ -135,6 +140,7 @@ impl Default for PrismatineParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            invert_phase: BoolParam::new("Invert Phase", false),
         }
     }
 }
@@ -254,7 +260,15 @@ impl Plugin for Prismatine {
                     self.phase[i] += dphi;
                 }
 
-                *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
+                if self.params.invert_phase.value()
+                {
+                    *sample = self.params.I_c.smoothed.next() *  (1.0/self.phase[i]).sin();
+                }
+                else
+                {
+                    *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
+                }
+                
             }
             //TODO: Reset phase when input stops to prevent outputting constant signal
             //reset phase buttons in GUI
