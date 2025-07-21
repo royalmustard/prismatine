@@ -83,7 +83,8 @@ struct PrismatineParams {
     #[id = "invert_phase"]
     invert_phase: BoolParam,
 
-
+    #[id = "remove_dc"]
+    remove_dc: BoolParam,
 }
 
 impl Default for Prismatine {
@@ -141,6 +142,7 @@ impl Default for PrismatineParams {
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             invert_phase: BoolParam::new("Invert Phase", false),
+            remove_dc: BoolParam::new("Remove DC", false)
         }
     }
 }
@@ -249,8 +251,17 @@ impl Plugin for Prismatine {
         //TODO: Play with simd
         for channel_samples in buffer.iter_samples() {
             for (i, sample) in channel_samples.into_iter().enumerate() {
-                let dphi = (self.prev[i] - *sample) * self.params.phase_gain.smoothed.next();
+                let dphi = 
+                if self.params.invert_phase.value()
+                {
+                    (1.0/(self.prev[i] - *sample)) * self.params.phase_gain.smoothed.next()
+                }
+                else {
+                    (self.prev[i] - *sample) * self.params.phase_gain.smoothed.next()
+                };
+                
                 self.prev[i] = *sample;
+                
                 //limit maximum phase for numerical precision
                 if self.phase[i] + dphi > MAX_PHASE {
                     self.phase[i] += -MAX_PHASE + dphi;
@@ -260,14 +271,10 @@ impl Plugin for Prismatine {
                     self.phase[i] += dphi;
                 }
 
-                if self.params.invert_phase.value()
-                {
-                    *sample = self.params.I_c.smoothed.next() *  (1.0/self.phase[i]).sin();
-                }
-                else
-                {
-                    *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
-                }
+
+
+                *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
+
                 
             }
             //TODO: Reset phase when input stops to prevent outputting constant signal
@@ -275,7 +282,9 @@ impl Plugin for Prismatine {
             
         }
         // FFT yeet DC component? Works but TODO: add a toggle
-        self.stft.process(buffer, |_channel_idx, real_fft_buffer| {
+        if self.params.remove_dc.value()
+        {
+            self.stft.process(buffer, |_channel_idx, real_fft_buffer| {
             self.r2c_plan
                 .process_with_scratch(
                     real_fft_buffer,
@@ -293,7 +302,9 @@ impl Plugin for Prismatine {
                     &mut self.scratch_buffer,
                 )
                 .unwrap();
-        });
+            });
+        }
+        
 
         ProcessStatus::Normal
     }
