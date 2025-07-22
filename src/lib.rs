@@ -1,6 +1,10 @@
 use core::f32;
 use fft_filter::FFTHelper;
+
+
 use nih_plug::prelude::*;
+use nih_plug::prelude::util::db_to_gain;
+use nih_plug::prelude::util as nih_util;
 
 use realfft::{
     num_complex::{Complex, Complex32, ComplexFloat},
@@ -11,6 +15,8 @@ use std::sync::Arc;
 
 mod editor;
 mod fft_filter;
+mod util;
+
 // FT stuff:
 // Sample rate ~ maximum frequency
 // Window size ~ minimum frequency
@@ -27,7 +33,7 @@ const FFT_WINDOW_SIZE: usize = WINDOW_SIZE; //+ FILTER_WINDOW_SIZE - 1;
 /// The gain compensation we need to apply for the STFT process.
 const GAIN_COMPENSATION: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
 
-const MAX_PHASE: f32 = 1.0e5 * f32::consts::PI;
+const MAX_PHASE: f32 = 1.0e4 * f32::consts::PI;
 fn kinetic_spectrum_from_window_size(window_size: usize, sample_rate: f32) -> Vec<Complex<f32>> {
     let filter_spectrum: Vec<Complex32> = (0..window_size / 2)
         .map(|i| (i as f32) * sample_rate / (2.0 * window_size as f32)) //construced frequency values
@@ -117,10 +123,10 @@ impl Default for PrismatineParams {
         Self {
             phase_gain: FloatParam::new(
                 "Phase Gain",
-                util::db_to_gain(0.0),
+                db_to_gain(0.0),
                 FloatRange::Skewed {
-                    min: util::db_to_gain(0.0),
-                    max: util::db_to_gain(60.0),
+                    min: db_to_gain(0.0),
+                    max: db_to_gain(60.0),
                     factor: FloatRange::gain_skew_factor(0.0, 60.0),
                 },
             )
@@ -130,10 +136,10 @@ impl Default for PrismatineParams {
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             I_c: FloatParam::new(
                 "Critical Current",
-                util::db_to_gain(0.0),
+                db_to_gain(0.0),
                 FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
+                    min: db_to_gain(-30.0),
+                    max: db_to_gain(30.0),
                     factor: FloatRange::gain_skew_factor(-30.0, 30.0),
                 },
             )
@@ -201,7 +207,7 @@ impl Plugin for Prismatine {
         self.filter_spectrum =
             kinetic_spectrum_from_window_size(WINDOW_SIZE, buffer_config.sample_rate);
         //nih_dbg!(&self.filter_spectrum);
-        util::window::hann_in_place(&mut self.window_buff);
+        nih_util::window::hann_in_place(&mut self.window_buff);
         nih_dbg!(self.filter_spectrum.iter().map(|c| c.abs()).sum::<f32>());
         //nih_dbg!(self.scratch_buffer);
         //self.prev = vec![0.0, 0.0]; //Two input channels, as specified in the layout, idk if this needs to by dynamic
@@ -251,29 +257,47 @@ impl Plugin for Prismatine {
         //TODO: Play with simd
         for channel_samples in buffer.iter_samples() {
             for (i, sample) in channel_samples.into_iter().enumerate() {
+                let diff = self.prev[i] - *sample;
                 let dphi = 
                 if self.params.invert_phase.value()
                 {
-                    (1.0/(self.prev[i] - *sample)) * self.params.phase_gain.smoothed.next()
+                   util::map_range_linear(1.0/(self.prev[i] - *sample), 0.0, 1.0/f32::EPSILON, 0.0, 1.0) * self.params.phase_gain.smoothed.next()
                 }
                 else {
                     (self.prev[i] - *sample) * self.params.phase_gain.smoothed.next()
                 };
                 
                 self.prev[i] = *sample;
-                
+                //prevent NaN poisoning
+                if self.prev[i].is_nan()
+                {
+                    self.prev[i] = 0.0;
+                }
+
+
                 //limit maximum phase for numerical precision
                 if self.phase[i] + dphi > MAX_PHASE {
                     self.phase[i] += -MAX_PHASE + dphi;
+                    
                 } else if self.phase[i] + dphi < -MAX_PHASE {
                     self.phase[i] += MAX_PHASE + dphi;
+                   
                 } else {
                     self.phase[i] += dphi;
                 }
 
-
-
-                *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
+                if self.params.invert_phase.value()
+                {
+                   *sample = diff * self.params.I_c.smoothed.next() * self.phase[i].sin();
+                }
+                else {
+                    *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
+                }
+                if sample.is_nan()
+                {
+                    *sample = 0.0;
+                }
+                //nih_dbg!(&sample);
 
                 
             }
@@ -281,7 +305,7 @@ impl Plugin for Prismatine {
             //reset phase buttons in GUI
             
         }
-        // FFT yeet DC component? Works but TODO: add a toggle
+        // FFT yeet DC component
         if self.params.remove_dc.value()
         {
             self.stft.process(buffer, |_channel_idx, real_fft_buffer| {
