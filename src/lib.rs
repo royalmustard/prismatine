@@ -6,6 +6,7 @@ use nih_plug::prelude::*;
 use nih_plug::prelude::util::db_to_gain;
 use nih_plug::prelude::util as nih_util;
 
+use nih_plug_iced::IcedState;
 use realfft::{
     num_complex::{Complex, Complex32, ComplexFloat},
     num_traits::{Inv},
@@ -79,6 +80,9 @@ struct Prismatine {
 
 #[derive(Params)]
 struct PrismatineParams {
+
+     #[persist = "editor-state"]
+    editor_state: Arc<IcedState>,
     //TODO: Dry/Wet
     #[id = "phase_gain"]
     phase_gain: FloatParam,
@@ -121,6 +125,8 @@ impl Default for Prismatine {
 impl Default for PrismatineParams {
     fn default() -> Self {
         Self {
+            editor_state: editor::default_state(),
+
             phase_gain: FloatParam::new(
                 "Phase Gain",
                 db_to_gain(0.0),
@@ -331,6 +337,13 @@ impl Plugin for Prismatine {
         
 
         ProcessStatus::Normal
+    }
+
+    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(
+            self.params.clone(),
+            self.params.editor_state.clone(),
+        )
     }
 }
 
