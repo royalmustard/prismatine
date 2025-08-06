@@ -14,6 +14,8 @@ use realfft::{
 };
 use std::sync::Arc;
 
+use crate::editor::PrismatineEditorParams;
+
 mod editor;
 mod fft_filter;
 mod util;
@@ -55,9 +57,9 @@ fn kinetic_spectrum_from_window_size(window_size: usize, sample_rate: f32) -> Ve
         .map(|c| c * gain_compensation)
         .collect()
 }
-struct Prismatine {
+pub struct Prismatine {
     params: Arc<PrismatineParams>,
-
+    
     /// An adapter that performs most of the overlap-add algorithm for us.
     stft: FFTHelper,
 
@@ -75,7 +77,7 @@ struct Prismatine {
     window_buff: [f32; FFT_WINDOW_SIZE],
 
     prev: [f32; 2],
-    phase: [f32; 2],
+    phase: Arc<[AtomicF32; 2]>,
 }
 
 #[derive(Params)]
@@ -104,7 +106,7 @@ impl Default for Prismatine {
         let c2r_plan = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
         let complex_fft_buffer = r2c_plan.make_output_vec();
         nih_dbg!(complex_fft_buffer.len());
-
+        
         Self {
             params: Arc::new(PrismatineParams::default()),
             stft: FFTHelper::new(2, WINDOW_SIZE),
@@ -117,7 +119,7 @@ impl Default for Prismatine {
             scratch_buffer: [Complex32::new(0.0, 0.0); 2048],
             window_buff: [0.0; FFT_WINDOW_SIZE],
             prev: [0.0; 2],
-            phase: [0.0; 2],
+            phase: Arc::new([AtomicF32::new(0.0), AtomicF32::new(0.0)]),
         }
     }
 }
@@ -223,7 +225,10 @@ impl Plugin for Prismatine {
     fn reset(&mut self) {
         //self.stft.set_block_size(WINDOW_SIZE);
         self.stft.reset();
-        self.phase = [0.0;2];
+        for afloat in self.phase.as_ref()
+        {
+            afloat.store(0.0, std::sync::atomic::Ordering::Release);
+        }
         self.prev = [0.0;2];
     }
 
@@ -233,33 +238,7 @@ impl Plugin for Prismatine {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // nih_dbg!(buffer.samples());
-        // self.stft
-        //     .process(buffer, |_channel_idx, real_fft_buffer| {
-
-        //         //util::window::multiply_with_window(real_fft_buffer, &self.window_buff);
-        //         self.r2c_plan
-        //             .process_with_scratch(real_fft_buffer, &mut self.complex_fft_buffer, &mut self.scratch_buffer)
-        //             .unwrap();
-
-        //         nih_dbg!(self.filter_spectrum.len());
-        //         nih_dbg!(self.complex_fft_buffer.len());
-        //         for (fft_bin, kernel_bin) in self
-        //             .complex_fft_buffer
-        //             .iter_mut()
-        //             .zip(&self.filter_spectrum)
-        //         {
-        //             *fft_bin *=  GAIN_COMPENSATION* kernel_bin;
-        //         }
-
-        //         // Inverse FFT back into the scratch buffer. This will be added to a ring buffer
-        //         // which gets written back to the host at a one block delay.
-        //         self.c2r_plan
-        //             .process_with_scratch(&mut self.complex_fft_buffer, real_fft_buffer, &mut self.scratch_buffer)
-        //             .unwrap();
-
-        //     });
-
+        
         //TODO: Play with simd
         for channel_samples in buffer.iter_samples() {
             for (i, sample) in channel_samples.into_iter().enumerate() {
@@ -280,24 +259,24 @@ impl Plugin for Prismatine {
                     self.prev[i] = 0.0;
                 }
 
-
+                let mut local_phase = self.phase[i].load(std::sync::atomic::Ordering::Acquire);
                 //limit maximum phase for numerical precision
-                if self.phase[i] + dphi > MAX_PHASE {
-                    self.phase[i] += -MAX_PHASE + dphi;
+                if local_phase + dphi > MAX_PHASE {
+                    local_phase += -MAX_PHASE + dphi;
                     
-                } else if self.phase[i] + dphi < -MAX_PHASE {
-                    self.phase[i] += MAX_PHASE + dphi;
+                } else if local_phase + dphi < -MAX_PHASE {
+                    local_phase += MAX_PHASE + dphi;
                    
                 } else {
-                    self.phase[i] += dphi;
+                    local_phase += dphi;
                 }
-
+                self.phase[i].store(local_phase, std::sync::atomic::Ordering::Release);
                 if self.params.invert_phase.value()
                 {
-                   *sample = diff * self.params.I_c.smoothed.next() * self.phase[i].sin();
+                   *sample = diff * self.params.I_c.smoothed.next() * local_phase.sin();
                 }
                 else {
-                    *sample = self.params.I_c.smoothed.next() * self.phase[i].sin();
+                    *sample = self.params.I_c.smoothed.next() * local_phase.sin();
                 }
                 if sample.is_nan()
                 {
@@ -341,7 +320,10 @@ impl Plugin for Prismatine {
 
     fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(
-            self.params.clone(),
+            PrismatineEditorParams{
+                prismatine_params: self.params.clone(),
+                phase: self.phase.clone(),
+            },
             self.params.editor_state.clone(),
         )
     }
