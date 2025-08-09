@@ -11,7 +11,7 @@ description = "A short description of your plugin"
 members = ["xtask"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 # Remove the `assert_process_allocs` feature to allow allocations on the audio
@@ -19,10 +19,15 @@ crate-type = ["cdylib"]
 #nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 # Uncomment the below line to disable the on-by-default VST3 feature to remove
 # the GPL compatibility requirement
-nih_plug = { git = "https://github.com/royalmustard/nih-plug.git", default-features = false,  features = ["assert_process_allocs"] } # 
-nih_plug_iced = { git = "https://github.com/royalmustard/nih-plug.git" }
+nih_plug = { git = "https://github.com/royalmustard/nih-plug.git", branch="wip", default-features = false,  features = ["assert_process_allocs", "standalone"] } # 
+nih_plug_iced = { git = "https://github.com/royalmustard/nih-plug.git", branch="wip"}
+seven_segment_iced = {path="../seven_segment_iced"}
 realfft = "3.4"
+#atomic_float = "1.1" supplied in nih
 # dasp_ring_buffer="0.11"
+
+iced_audio = {git = "https://github.com/fazibear/iced_audio", branch="iced-0.13"}
+atomic_refcell = "0.1"
 [profile.release]
 lto = "thin"
 strip = "symbols"
