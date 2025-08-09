@@ -4,10 +4,11 @@ use std::sync::Arc;
 use crate::PrismatineParams;
 use atomic_refcell::AtomicRefCell;
 use nih_plug::nih_dbg;
+use nih_plug::params::Param;
 use nih_plug::prelude::AtomicF32;
 use nih_plug::{editor::Editor, prelude::GuiContext};
 use nih_plug_iced::core::Element;
-use nih_plug_iced::widget::{canvas, container, Column, Text};
+use nih_plug_iced::widget::{canvas, container, toggler, Column, Text};
 use nih_plug_iced::widgets as nih_widgets;
 use nih_plug_iced::*;
 use nih_plug_iced::{create_iced_editor, IcedEditor, IcedState};
@@ -29,6 +30,7 @@ pub(crate) fn create(
 enum Message {
     /// Update a parameter's value.
     ParamUpdate(nih_widgets::ParamMessage),
+    SwitchInvPhase(bool)
 }
 
 struct PrismatineEditor {
@@ -75,6 +77,14 @@ impl IcedEditor for PrismatineEditor {
     ) -> Task<Self::Message> {
         match message {
             Message::ParamUpdate(message) => self.handle_param_message(message),
+            Message::SwitchInvPhase(value) => {
+                unsafe {
+                    self.context.raw_begin_set_parameter(self.params.prismatine_params.invert_phase.as_ptr());
+                    self.context.raw_set_parameter_normalized(self.params.prismatine_params.invert_phase.as_ptr(), match value {true => 1.0, _ => 0.0});
+                    self.context.raw_end_set_parameter(self.params.prismatine_params.invert_phase.as_ptr());
+                }
+                
+            }
         }
 
         Task::none()
@@ -136,6 +146,12 @@ impl IcedEditor for PrismatineEditor {
             .push(container(nih_plug_iced::widgets::ParamSlider::new(self.phase_gain_slider_state.clone(), &self.params.prismatine_params.phase_gain).map(Message::ParamUpdate)).width(Length::Fill).center_x(Length::Fill))
             .push(Text::new("critical current").width(Length::Fill).center())
             .push(container(nih_plug_iced::widgets::ParamSlider::new(self.I_c_slider_state.clone(), &self.params.prismatine_params.I_c).map(Message::ParamUpdate)).width(Length::Fill).center_x(Length::Fill))
+            .push(container(
+                toggler(self.params.prismatine_params.invert_phase.value())
+                .on_toggle(Message::SwitchInvPhase)
+                .label("Invert phase mode")
+                .width(Length::Fill)
+            ).width(Length::Fill))
             .into()
     }
 }
