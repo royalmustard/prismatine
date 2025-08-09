@@ -242,6 +242,9 @@ impl Plugin for Prismatine {
         //TODO: Play with simd
         for channel_samples in buffer.iter_samples() {
             for (i, sample) in channel_samples.into_iter().enumerate() {
+                if *sample == 0.0{ //dont process silence
+                    continue;
+                }
                 let diff = self.prev[i] - *sample;
                 let dphi = 
                 if self.params.invert_phase.value()
