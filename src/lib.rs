@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use crate::editor::PrismatineEditorParams;
 
+
 mod editor;
 mod fft_filter;
 mod util;
@@ -27,8 +28,6 @@ mod util;
 
 // The size of the windows we'll process at a time.
 const WINDOW_SIZE: usize = 1024;
-/// The length of the filter's impulse response.
-const FILTER_WINDOW_SIZE: usize = 0;
 /// The length of the FFT window we will use to perform FFT convolution. This includes padding to
 /// prevent time domain aliasing as a result of cyclic convolution.
 const FFT_WINDOW_SIZE: usize = WINDOW_SIZE; //+ FILTER_WINDOW_SIZE - 1;
@@ -83,7 +82,7 @@ pub struct Prismatine {
 #[derive(Params)]
 struct PrismatineParams {
 
-     #[persist = "editor-state"]
+    #[persist = "editor-state"]
     editor_state: Arc<IcedState>,
     //TODO: Dry/Wet
     #[id = "phase_gain"]
@@ -97,6 +96,9 @@ struct PrismatineParams {
 
     #[id = "remove_dc"]
     remove_dc: BoolParam,
+
+    #[id = "process_mode"]
+    process_mode: EnumParam<util::ProcessMode>
 }
 
 impl Default for Prismatine {
@@ -142,6 +144,7 @@ impl Default for PrismatineParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+
             I_c: FloatParam::new(
                 "Critical Current",
                 db_to_gain(0.0),
@@ -155,8 +158,13 @@ impl Default for PrismatineParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+
             invert_phase: BoolParam::new("Invert Phase", false),
-            remove_dc: BoolParam::new("Remove DC", false)
+
+            remove_dc: BoolParam::new("Remove DC", false),
+
+            process_mode: EnumParam::new("Junction Model", util::ProcessMode::Josephson)
+
         }
     }
 }
@@ -204,7 +212,7 @@ impl Plugin for Prismatine {
 
     fn initialize(
         &mut self,
-        audio_io_layout: &AudioIOLayout,
+        _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
@@ -285,7 +293,6 @@ impl Plugin for Prismatine {
                 {
                     *sample = 0.0;
                 }
-                //nih_dbg!(&sample);
 
                 
             }
@@ -321,7 +328,7 @@ impl Plugin for Prismatine {
         ProcessStatus::Normal
     }
 
-    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(
             PrismatineEditorParams{
                 prismatine_params: self.params.clone(),

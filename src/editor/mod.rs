@@ -1,6 +1,8 @@
-use std::f32;
+
 use std::sync::Arc;
 
+use crate::editor::parameter_box::create_parameter_box;
+use crate::util::ProcessMode;
 use crate::PrismatineParams;
 use atomic_refcell::AtomicRefCell;
 use nih_plug::nih_dbg;
@@ -8,15 +10,17 @@ use nih_plug::params::Param;
 use nih_plug::prelude::AtomicF32;
 use nih_plug::{editor::Editor, prelude::GuiContext};
 use nih_plug_iced::core::Element;
-use nih_plug_iced::widget::{canvas, container, toggler, Column, Text};
+use nih_plug_iced::widget::{canvas, container, pick_list, toggler, Column, Row, Text};
 use nih_plug_iced::widgets as nih_widgets;
 use nih_plug_iced::*;
 use nih_plug_iced::{create_iced_editor, IcedEditor, IcedState};
 use seven_segment_iced::canvas_segment::SevenSegmentCanvas;
 use seven_segment_iced::SevenSegmentStyle;
 
+mod parameter_box;
+
 pub(crate) fn default_state() -> Arc<IcedState> {
-    IcedState::from_size(200, 500)
+    IcedState::from_size(400, 500)
 }
 
 pub(crate) fn create(
@@ -29,8 +33,10 @@ pub(crate) fn create(
 #[derive(Debug, Clone, Copy)]
 enum Message {
     /// Update a parameter's value.
+    FontLoaded,
     ParamUpdate(nih_widgets::ParamMessage),
-    SwitchInvPhase(bool)
+    SwitchInvPhase(bool),
+    ProcessModeSelected(ProcessMode)
 }
 
 struct PrismatineEditor {
@@ -39,6 +45,8 @@ struct PrismatineEditor {
 
     I_c_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
     phase_gain_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
+
+    process_mode_state: Option<ProcessMode>,
 }
 
 #[derive(Clone)]
@@ -61,9 +69,10 @@ impl IcedEditor for PrismatineEditor {
             context,
             I_c_slider_state: Default::default(),
             phase_gain_slider_state: Default::default(),
+            process_mode_state: Some(ProcessMode::Josephson),
         };
 
-        (editor, Task::none())
+        (editor, font::load(include_bytes!("/usr/share/fonts/TTF/Comic.TTF").as_slice()).map(|_| Message::FontLoaded))
     }
 
     fn context(&self) -> &dyn GuiContext {
@@ -83,65 +92,32 @@ impl IcedEditor for PrismatineEditor {
                     self.context.raw_set_parameter_normalized(self.params.prismatine_params.invert_phase.as_ptr(), match value {true => 1.0, _ => 0.0});
                     self.context.raw_end_set_parameter(self.params.prismatine_params.invert_phase.as_ptr());
                 }
-                
-            }
+            },
+            Message::ProcessModeSelected(pm) => {self.process_mode_state = Some(pm)},
+            _ => {}
         }
 
         Task::none()
     }
 
     fn view(&self) -> Element<'_, Self::Message, Theme, Renderer> {
-        let phase_left = self.params.phase[0]
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .rem_euclid(f32::consts::PI)
-            .to_degrees();
-        let phase_right = self.params.phase[1]
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .rem_euclid(f32::consts::PI)
-            .to_degrees();
 
-        Column::new().spacing(5.0)
+        let process_modes = [ProcessMode::Josephson, ProcessMode::AB, ProcessMode::KO1, ProcessMode::KO2];
+
+
+        let left_column = Column::new().spacing(5.0)
             .push(Text::new("Prismatine")
                         .size(30.0)
-                        .font(Font::with_name("NotoSans"))
+                        .font(Font::with_name("Noto Sans"))
                         .center()
                         .width(Length::Fill))
-            .push(
-                canvas(SevenSegmentCanvas::new(
-                    seven_segment_iced::glyph::string_with_decimals_to_segment(format!(
-                        "{phase_left:0>5.1}"
-                    )),
-                    4,
-                    SevenSegmentStyle {
-                        background_color: Color::from_rgb(0.047, 0.067, 0.09),
-                        segment_color: Color::from_rgb(0.69, 1.0, 0.996),
-                        off_color: None, //Color or inactive segments
-                        margin_frac: 1.0 / 15.0,
-                        aspect_ratio: 6.9,
-                        line_margin_frac: 1.0 / 30.0,
-                        dot_size_frac: 1.0 / 15.0,
-                    },
-                ))
-                .width(Length::Fill),
-            )
-            .push(
-                canvas(SevenSegmentCanvas::new(
-                    seven_segment_iced::glyph::string_with_decimals_to_segment(format!(
-                        "{phase_right:0>5.1}"
-                    )),
-                    4,
-                    SevenSegmentStyle {
-                        background_color: Color::from_rgb(0.047, 0.067, 0.09),
-                        segment_color: Color::from_rgb(0.69, 1.0, 0.996),
-                        off_color: None, //Color or inactive segments
-                        margin_frac: 1.0 / 15.0,
-                        aspect_ratio: 6.9,
-                        line_margin_frac: 1.0 / 30.0,
-                        dot_size_frac: 1.0 / 15.0,
-                    },
-                ))
-                .width(Length::Fill),
-            )
+            .push(container(
+                pick_list(process_modes, self.process_mode_state, Message::ProcessModeSelected)
+                .font(Font::with_name("Noto Sans"))
+                .placeholder("nyaaaa")
+                )
+                .width(Length::Fill)
+                .center_x(Length::Fill))
             .push(Text::new("phase gain").width(Length::Fill).center())
             .push(container(nih_plug_iced::widgets::ParamSlider::new(self.phase_gain_slider_state.clone(), &self.params.prismatine_params.phase_gain).map(Message::ParamUpdate)).width(Length::Fill).center_x(Length::Fill))
             .push(Text::new("critical current").width(Length::Fill).center())
@@ -149,9 +125,18 @@ impl IcedEditor for PrismatineEditor {
             .push(container(
                 toggler(self.params.prismatine_params.invert_phase.value())
                 .on_toggle(Message::SwitchInvPhase)
-                .label("Invert phase mode")
+                .label("invert phase mode")
                 .width(Length::Fill)
-            ).width(Length::Fill))
+            )
+            .width(Length::Fill));
+            //.push(Text::new(format!("{:?}", )));
+
+            let parameter_box = create_parameter_box();
+
+            Row::new()
+            .push(left_column)
+            .push(parameter_box)
+            .height(Length::Fill)
             .into()
     }
 }
