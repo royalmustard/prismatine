@@ -30,10 +30,10 @@ impl Display for ProcessMode
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self
         {
-            ProcessMode::Josephson => f.write_str("Josephson"),
-            ProcessMode::AB => f.write_str("AB"),
-            ProcessMode::KO1=> f.write_str("KO-1"),
-            ProcessMode::KO2 => f.write_str("KO-2"),
+            ProcessMode::Josephson => write!(f, "Josephson"),
+            ProcessMode::AB => write!(f, "AB"),
+            ProcessMode::KO1=> write!(f, "KO-1"),
+            ProcessMode::KO2 => write!(f, "KO-2"),
         }
     }
 }
