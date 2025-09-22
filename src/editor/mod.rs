@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use crate::editor::parameter_box::create_parameter_box;
+
 use crate::util::ProcessMode;
 use crate::PrismatineParams;
 use atomic_refcell::AtomicRefCell;
 use nih_plug::nih_dbg;
 use nih_plug::params::Param;
-use nih_plug::prelude::AtomicF32;
+use nih_plug::prelude::{AtomicF32, ParamSetter};
 use nih_plug::{editor::Editor, prelude::GuiContext};
 use nih_plug_iced::core::Element;
 use nih_plug_iced::widget::{canvas, column, container, pick_list, row, toggler, Column, Row, Text};
@@ -63,18 +63,18 @@ impl IcedEditor for PrismatineEditor {
         params: Self::InitializationFlags,
         context: Arc<dyn GuiContext>,
     ) -> (Self, Task<Self::Message>) {
+        let pm = params.prismatine_params.process_mode.value();
         let editor = PrismatineEditor {
             params,
             context,
             I_c_slider_state: Default::default(),
             phase_gain_slider_state: Default::default(),
-            process_mode_state: ProcessMode::Josephson,
+            process_mode_state: pm,
         };
 
         (
             editor,
-            font::load(include_bytes!("/usr/share/fonts/TTF/Comic.TTF").as_slice())
-                .map(|_| Message::FontLoaded),
+            Task::none(),
         )
     }
 
@@ -89,20 +89,18 @@ impl IcedEditor for PrismatineEditor {
     ) -> Task<Self::Message> {
         match message {
             Message::ParamUpdate(message) => self.handle_param_message(message),
-            Message::SwitchInvPhase(value) => unsafe {
-                self.context
-                    .raw_begin_set_parameter(self.params.prismatine_params.invert_phase.as_ptr());
-                self.context.raw_set_parameter_normalized(
-                    self.params.prismatine_params.invert_phase.as_ptr(),
-                    match value {
-                        true => 1.0,
-                        _ => 0.0,
-                    },
-                );
-                self.context
-                    .raw_end_set_parameter(self.params.prismatine_params.invert_phase.as_ptr());
+            Message::SwitchInvPhase(value) =>  {
+                let setter = ParamSetter::new(&*self.context);
+                setter.begin_set_parameter(&self.params.prismatine_params.invert_phase);
+                setter.set_parameter(&self.params.prismatine_params.invert_phase, value);
+                setter.end_set_parameter(&self.params.prismatine_params.invert_phase);
             },
-            Message::ProcessModeSelected(pm) => self.process_mode_state = pm,
+            Message::ProcessModeSelected(pm) =>  {
+                let setter = ParamSetter::new(&*self.context);
+                setter.begin_set_parameter(&self.params.prismatine_params.process_mode);
+                setter.set_parameter(&self.params.prismatine_params.process_mode, pm);
+                setter.end_set_parameter(&self.params.prismatine_params.process_mode);
+            }
             _ => {}
         }
 
@@ -126,49 +124,20 @@ impl IcedEditor for PrismatineEditor {
 
             pick_list(
                 process_modes,
-                Some(&self.process_mode_state),
+                Some(self.params.prismatine_params.process_mode.value()),
                 Message::ProcessModeSelected
             )
             .width(Length::Fill),
 
-            Text::new("phase gain").width(Length::Fill).center(),
-
-            container(
-                    nih_plug_iced::widgets::ParamSlider::new(
-                        self.phase_gain_slider_state.clone(),
-                        &self.params.prismatine_params.phase_gain,
-                    )
-                    .map(Message::ParamUpdate),
-                )
-                .width(Length::Fill)
-                .center_x(Length::Fill),
-
-            // Text::new("critical current").width(Length::Fill).center(),
-
-            // container(
-            //         nih_plug_iced::widgets::ParamSlider::new(
-            //             self.I_c_slider_state.clone(),
-            //             &self.params.prismatine_params.I_c,
-            //         )
-            //         .map(Message::ParamUpdate),
-            //     )
-            //     .width(Length::Fill)
-            //     .center_x(Length::Fill),
-
-            // container(
-            //         toggler(self.params.prismatine_params.invert_phase.value())
-            //             .on_toggle(Message::SwitchInvPhase)
-            //             .label("invert phase mode")
-            //             .width(Length::Fill),
-            //     )
-            //     .width(Length::Fill),
+            
 
         ]
-        .spacing(5.0);
+        .spacing(5.0)
+        .width(Length::FillPortion(1));
 
 
 
-        let parameter_box = create_parameter_box();
+        let parameter_box = self.create_parameter_box();
 
         row![left_column, parameter_box]
             .height(Length::Fill)
