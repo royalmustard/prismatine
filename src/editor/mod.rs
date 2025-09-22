@@ -51,7 +51,6 @@ struct PrismatineEditor {
 #[derive(Clone)]
 pub struct PrismatineEditorParams {
     pub prismatine_params: Arc<PrismatineParams>,
-    pub phase: Arc<[AtomicF32; 2]>,
 }
 
 impl IcedEditor for PrismatineEditor {

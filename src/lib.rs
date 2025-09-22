@@ -14,13 +14,14 @@ use realfft::{
 };
 use std::sync::Arc;
 
-use crate::editor::PrismatineEditorParams;
+use crate::{editor::PrismatineEditorParams, util::ProcessMode};
 
 
 mod editor;
 mod fft_filter;
 mod util;
-
+mod process;
+use process::process_josephson;
 // FT stuff:
 // Sample rate ~ maximum frequency
 // Window size ~ minimum frequency
@@ -76,7 +77,7 @@ pub struct Prismatine {
     window_buff: [f32; FFT_WINDOW_SIZE],
 
     prev: [f32; 2],
-    phase: Arc<[AtomicF32; 2]>,
+    phase: [f32; 2],
 }
 
 #[derive(Params)]
@@ -121,7 +122,7 @@ impl Default for Prismatine {
             scratch_buffer: [Complex32::new(0.0, 0.0); 2048],
             window_buff: [0.0; FFT_WINDOW_SIZE],
             prev: [0.0; 2],
-            phase: Arc::new([AtomicF32::new(0.0), AtomicF32::new(0.0)]),
+            phase: [0.0; 2],
         }
     }
 }
@@ -233,10 +234,7 @@ impl Plugin for Prismatine {
     fn reset(&mut self) {
         //self.stft.set_block_size(WINDOW_SIZE);
         self.stft.reset();
-        for afloat in self.phase.as_ref()
-        {
-            afloat.store(0.0, std::sync::atomic::Ordering::Release);
-        }
+        self.phase = [0.0;2];
         self.prev = [0.0;2];
     }
 
@@ -253,45 +251,11 @@ impl Plugin for Prismatine {
                 if *sample == 0.0{ //dont process silence
                     continue;
                 }
-                let diff = self.prev[i] - *sample;
-                let dphi = 
-                if self.params.invert_phase.value()
-                {
-                   util::map_range_linear(1.0/(self.prev[i] - *sample), 0.0, 1.0/f32::EPSILON, 0.0, 1.0) * self.params.phase_gain.smoothed.next()
-                }
-                else {
-                    (self.prev[i] - *sample) * self.params.phase_gain.smoothed.next()
-                };
                 
-                self.prev[i] = *sample;
-                //prevent NaN poisoning
-                if self.prev[i].is_nan()
+                match self.params.process_mode.value()
                 {
-                    self.prev[i] = 0.0;
-                }
-
-                let mut local_phase = self.phase[i].load(std::sync::atomic::Ordering::Acquire);
-                //limit maximum phase for numerical precision
-                if local_phase + dphi > MAX_PHASE {
-                    local_phase += -MAX_PHASE + dphi;
-                    
-                } else if local_phase + dphi < -MAX_PHASE {
-                    local_phase += MAX_PHASE + dphi;
-                   
-                } else {
-                    local_phase += dphi;
-                }
-                self.phase[i].store(local_phase, std::sync::atomic::Ordering::Release);
-                if self.params.invert_phase.value()
-                {
-                   *sample = diff * self.params.I_c.smoothed.next() * local_phase.sin();
-                }
-                else {
-                    *sample = self.params.I_c.smoothed.next() * local_phase.sin();
-                }
-                if sample.is_nan()
-                {
-                    *sample = 0.0;
+                    ProcessMode::Josephson => {process_josephson(self.params.clone(), &mut self.prev, &mut self.phase, i, sample)}
+                    _ => {}
                 }
 
                 
@@ -332,7 +296,6 @@ impl Plugin for Prismatine {
         editor::create(
             PrismatineEditorParams{
                 prismatine_params: self.params.clone(),
-                phase: self.phase.clone(),
             },
             self.params.editor_state.clone(),
         )
@@ -341,12 +304,12 @@ impl Plugin for Prismatine {
 
 impl ClapPlugin for Prismatine {
     const CLAP_ID: &'static str = "de.royalmustard.prismatine";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Distortion based on superconduction junctions");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
 
     // Don't forget to change these features
-    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
+    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo, ClapFeature::Distortion];
 }
 
 nih_export_clap!(Prismatine);
