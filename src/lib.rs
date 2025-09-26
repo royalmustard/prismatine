@@ -14,7 +14,7 @@ use realfft::{
 };
 use std::sync::Arc;
 
-use crate::{editor::PrismatineEditorParams, util::ProcessMode};
+use crate::{editor::PrismatineEditorParams, params::{ABParams, KO1Params}, process::process_ab, util::ProcessMode};
 
 
 mod editor;
@@ -22,6 +22,8 @@ mod fft_filter;
 mod util;
 mod process;
 use process::process_josephson;
+
+mod params;
 // FT stuff:
 // Sample rate ~ maximum frequency
 // Window size ~ minimum frequency
@@ -99,7 +101,13 @@ struct PrismatineParams {
     remove_dc: BoolParam,
 
     #[id = "process_mode"]
-    process_mode: EnumParam<util::ProcessMode>
+    process_mode: EnumParam<util::ProcessMode>,
+
+    #[nested(id_prefix = "ko1", group = "KO1")]
+    ko1_params: KO1Params,
+
+    #[nested(id_prefix = "ab", group = "AB")]
+    ab_params: ABParams
 }
 
 impl Default for Prismatine {
@@ -164,7 +172,11 @@ impl Default for PrismatineParams {
 
             remove_dc: BoolParam::new("Remove DC", false),
 
-            process_mode: EnumParam::new("Junction Model", util::ProcessMode::Josephson)
+            process_mode: EnumParam::new("Junction Model", util::ProcessMode::Josephson),
+
+            ko1_params: Default::default(),
+
+            ab_params: Default::default(),
 
         }
     }
@@ -254,7 +266,8 @@ impl Plugin for Prismatine {
                 
                 match self.params.process_mode.value()
                 {
-                    ProcessMode::Josephson => {process_josephson(self.params.clone(), &mut self.prev, &mut self.phase, i, sample)}
+                    ProcessMode::Josephson => process_josephson(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
+                    ProcessMode::AB => process_ab(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
                     _ => {}
                 }
 

@@ -51,6 +51,33 @@ pub fn create_parameter_box(&self
         .spacing(5.0)
         .into(),
 
+
+        
+        ProcessMode::AB => column![
+            text("phase gain").width(Length::Fill).center(),
+            container(
+                nih_plug_iced::widgets::ParamSlider::new(
+                    self.phase_gain_slider_state.clone(),
+                    &self.params.prismatine_params.ab_params.phase_gain,
+                )
+                .map(Message::ParamUpdate),
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill),
+            text("critical current").width(Length::Fill).center(),
+            container(
+                nih_plug_iced::widgets::ParamSlider::new(
+                    self.I_c_slider_state.clone(),
+                    &self.params.prismatine_params.ab_params.critical_current,
+                )
+                .map(Message::ParamUpdate),
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill),
+        ].into(),
+
+
+
         _ => text("OwO nya").into(),
     }
 }

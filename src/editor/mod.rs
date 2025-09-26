@@ -9,7 +9,7 @@ use nih_plug::params::Param;
 use nih_plug::prelude::{AtomicF32, ParamSetter};
 use nih_plug::{editor::Editor, prelude::GuiContext};
 use nih_plug_iced::core::Element;
-use nih_plug_iced::widget::{canvas, column, container, pick_list, row, toggler, Column, Row, Text};
+use nih_plug_iced::widget::{canvas, column, container, pick_list, row, text, toggler, Column, Row, Text};
 use nih_plug_iced::widgets as nih_widgets;
 use nih_plug_iced::*;
 use nih_plug_iced::{create_iced_editor, IcedEditor, IcedState};
@@ -45,7 +45,6 @@ struct PrismatineEditor {
     I_c_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
     phase_gain_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
 
-    process_mode_state: ProcessMode,
 }
 
 #[derive(Clone)]
@@ -62,13 +61,11 @@ impl IcedEditor for PrismatineEditor {
         params: Self::InitializationFlags,
         context: Arc<dyn GuiContext>,
     ) -> (Self, Task<Self::Message>) {
-        let pm = params.prismatine_params.process_mode.value();
         let editor = PrismatineEditor {
             params,
             context,
             I_c_slider_state: Default::default(),
             phase_gain_slider_state: Default::default(),
-            process_mode_state: pm,
         };
 
         (
@@ -127,8 +124,6 @@ impl IcedEditor for PrismatineEditor {
                 Message::ProcessModeSelected
             )
             .width(Length::Fill),
-
-            
 
         ]
         .spacing(5.0)
