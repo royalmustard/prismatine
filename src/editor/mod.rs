@@ -44,7 +44,8 @@ struct PrismatineEditor {
 
     I_c_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
     phase_gain_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
-
+    temperature_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
+    terms_slider_state: Arc<AtomicRefCell<nih_widgets::param_slider::State>>,
 }
 
 #[derive(Clone)]
@@ -66,6 +67,8 @@ impl IcedEditor for PrismatineEditor {
             context,
             I_c_slider_state: Default::default(),
             phase_gain_slider_state: Default::default(),
+            temperature_slider_state: Default::default(),
+            terms_slider_state: Default::default(),
         };
 
         (

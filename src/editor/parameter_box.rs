@@ -76,7 +76,51 @@ pub fn create_parameter_box(&self
             .center_x(Length::Fill),
         ].into(),
 
+        ProcessMode::KO1 => column![
+            text("phase gain").width(Length::Fill).center(),
+            container(
+                nih_plug_iced::widgets::ParamSlider::new(
+                    self.phase_gain_slider_state.clone(),
+                    &self.params.prismatine_params.ko1_params.phase_gain,
+                )
+                .map(Message::ParamUpdate),
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill),
 
+            text("temperature").width(Length::Fill).center(),
+            container(
+                nih_plug_iced::widgets::ParamSlider::new(
+                    self.temperature_slider_state.clone(),
+                    &self.params.prismatine_params.ko1_params.temperature,
+                )
+                .map(Message::ParamUpdate),
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill),
+
+            text("terms").width(Length::Fill).center(),
+            container(
+                nih_plug_iced::widgets::ParamSlider::new(
+                    self.terms_slider_state.clone(),
+                    &self.params.prismatine_params.ko1_params.terms,
+                )
+                .map(Message::ParamUpdate),
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill),
+
+            text("critical current").width(Length::Fill).center(),
+            container(
+                nih_plug_iced::widgets::ParamSlider::new(
+                    self.I_c_slider_state.clone(),
+                    &self.params.prismatine_params.ko1_params.critical_current,
+                )
+                .map(Message::ParamUpdate),
+            )
+            .width(Length::Fill)
+            .center_x(Length::Fill),
+        ].into(),
 
         _ => text("OwO nya").into(),
     }

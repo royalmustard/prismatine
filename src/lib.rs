@@ -14,7 +14,7 @@ use realfft::{
 };
 use std::sync::Arc;
 
-use crate::{editor::PrismatineEditorParams, params::{ABParams, KO1Params}, process::process_ab, util::ProcessMode};
+use crate::{editor::PrismatineEditorParams, params::{ABParams, KO1Params}, process::{process_ab, process_ko1}, util::ProcessMode};
 
 
 mod editor;
@@ -268,6 +268,7 @@ impl Plugin for Prismatine {
                 {
                     ProcessMode::Josephson => process_josephson(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
                     ProcessMode::AB => process_ab(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
+                    ProcessMode::KO1 => process_ko1(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
                     _ => {}
                 }
 
