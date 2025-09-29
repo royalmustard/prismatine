@@ -33,7 +33,7 @@ pub struct KO1Params {
 impl Default for KO1Params {
     fn default() -> Self {
         Self {
-            phase_gain: float_gain(0.0, 60.0),
+            phase_gain: float_gain(-30.0, 30.0),
             critical_current: float_gain(-30.0, 30.0),
             temperature: FloatParam::new(
                 "Temperature",
@@ -65,6 +65,34 @@ pub struct ABParams {
 impl Default for ABParams
 {
      fn default() -> Self {
+        Self {
+            phase_gain: float_gain(-30.0, 30.0),
+            critical_current: float_gain(-30.0, 30.0),
+            temperature: FloatParam::new(
+                "Temperature",
+                0.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 300.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            ),
+        }
+    }
+}
+
+#[derive(Params)]
+pub struct KO2Params {
+    #[id = "phase_gain"]
+    pub phase_gain: FloatParam,
+    #[id = "critical_current"]
+    pub critical_current: FloatParam,
+    #[id = "temperature"]
+    pub temperature: FloatParam,
+}
+
+impl Default for KO2Params {
+    fn default() -> Self {
         Self {
             phase_gain: float_gain(-30.0, 30.0),
             critical_current: float_gain(-30.0, 30.0),

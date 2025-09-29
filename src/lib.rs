@@ -14,7 +14,7 @@ use realfft::{
 };
 use std::sync::Arc;
 
-use crate::{editor::PrismatineEditorParams, params::{ABParams, KO1Params}, process::{process_ab, process_ko1}, util::ProcessMode};
+use crate::{editor::PrismatineEditorParams, params::{ABParams, KO1Params, KO2Params}, process::{process_ab, process_ko1, process_ko2}, util::ProcessMode};
 
 
 mod editor;
@@ -107,7 +107,10 @@ struct PrismatineParams {
     ko1_params: KO1Params,
 
     #[nested(id_prefix = "ab", group = "AB")]
-    ab_params: ABParams
+    ab_params: ABParams,
+
+    #[nested(id_prefix = "ko2", group = "KO2")]
+    ko2_params: KO2Params
 }
 
 impl Default for Prismatine {
@@ -177,6 +180,8 @@ impl Default for PrismatineParams {
             ko1_params: Default::default(),
 
             ab_params: Default::default(),
+
+            ko2_params: Default::default()
 
         }
     }
@@ -269,6 +274,7 @@ impl Plugin for Prismatine {
                     ProcessMode::Josephson => process_josephson(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
                     ProcessMode::AB => process_ab(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
                     ProcessMode::KO1 => process_ko1(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
+                    ProcessMode::KO2 => process_ko2(self.params.clone(), &mut self.prev, &mut self.phase, i, sample),
                     _ => {}
                 }
 
