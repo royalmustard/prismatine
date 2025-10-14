@@ -332,4 +332,12 @@ impl ClapPlugin for Prismatine {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo, ClapFeature::Distortion];
 }
 
+impl Vst3Plugin for Prismatine
+{
+    const VST3_CLASS_ID: [u8; 16] = *b"PRISMATINE_MSTRD";
+
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =  &[Vst3SubCategory::Fx, Vst3SubCategory::Distortion];
+}
+
 nih_export_clap!(Prismatine);
+nih_export_vst3!(Prismatine);
